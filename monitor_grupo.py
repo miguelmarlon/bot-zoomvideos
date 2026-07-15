@@ -4,8 +4,10 @@ Para cada mensagem nova encontrada (desde a última execução): converte o link
 link de afiliado, baixa o vídeo para a pasta data/, reposta o vídeo (com a legenda já
 usando o link convertido) no grupo de destino (TELEGRAM_GROUP_ID) e remove o arquivo local.
 
-O progresso é salvo em state.json (último ID de mensagem processado por chat), para
-que execuções seguintes não reprocessem as mesmas mensagens.
+O progresso é salvo em state.json (último ID de mensagem processado por chat/tópico), para
+que execuções seguintes não reprocessem as mesmas mensagens. Cada item de
+TELEGRAM_MONITOR_CHAT_IDS pode ser "chat_id" (grupo inteiro) ou "chat_id_topicoId"
+(só um tópico de um grupo com Tópicos/fórum ativado).
 
 No início da execução, apaga a imagem/texto de divulgação enviados na execução
 anterior (IDs salvos em divulgacao_ids.json). Ao final, envia novamente a imagem
@@ -32,10 +34,26 @@ API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 PHONE = os.getenv("TELEGRAM_PHONE")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_IDS = [
-    int(chat_id) for chat_id in os.getenv("TELEGRAM_MONITOR_CHAT_IDS", "").split(",") if chat_id
-]
 GROUP_ID = int(os.getenv("TELEGRAM_GROUP_ID"))
+
+
+def _parse_chat_ids(valor: str) -> list[tuple[int, int | None]]:
+    """Cada item pode ser "chat_id" (grupo inteiro) ou "chat_id_topicoId" (só um tópico
+    de um grupo com Tópicos/fórum ativado), ex: -1002698134896_6."""
+    resultado = []
+    for item in valor.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "_" in item:
+            chat_id_str, topico_str = item.rsplit("_", 1)
+            resultado.append((int(chat_id_str), int(topico_str)))
+        else:
+            resultado.append((int(item), None))
+    return resultado
+
+
+CHAT_IDS = _parse_chat_ids(os.getenv("TELEGRAM_MONITOR_CHAT_IDS", ""))
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -165,12 +183,24 @@ def enviar_divulgacao() -> None:
 
 
 async def processar_chat(
-    client: TelegramClient, chat_id: int, estado: dict, limite: int | None, enviados: int
+    client: TelegramClient,
+    chat_id: int,
+    topico_id: int | None,
+    estado: dict,
+    limite: int | None,
+    enviados: int,
 ) -> int:
-    ultimo_id = estado.get(str(chat_id), 0)
+    chave_estado = f"{chat_id}_{topico_id}" if topico_id is not None else str(chat_id)
+    rotulo = f"{chat_id}/topico {topico_id}" if topico_id is not None else str(chat_id)
+
+    ultimo_id = estado.get(chave_estado, 0)
     maior_id = ultimo_id
 
-    async for mensagem in client.iter_messages(chat_id, min_id=ultimo_id, reverse=True):
+    kwargs = {"min_id": ultimo_id, "reverse": True}
+    if topico_id is not None:
+        kwargs["reply_to"] = topico_id
+
+    async for mensagem in client.iter_messages(chat_id, **kwargs):
         if limite is not None and enviados >= limite:
             break
 
@@ -179,7 +209,7 @@ async def processar_chat(
         legenda = mensagem.raw_text or ""
         link = extrair_link_shopee(legenda)
         if link and tem_video(mensagem):
-            print(f"[{chat_id}] mensagem {mensagem.id}: link encontrado -> {link}")
+            print(f"[{rotulo}] mensagem {mensagem.id}: link encontrado -> {link}")
             try:
                 link_afiliado = converter_link(link)
                 print(f"  link de afiliado: {link_afiliado}")
@@ -198,7 +228,7 @@ async def processar_chat(
 
                 enviados += 1
 
-        estado[str(chat_id)] = maior_id
+        estado[chave_estado] = maior_id
         salvar_estado(estado)
 
     return enviados
@@ -226,8 +256,10 @@ async def main() -> None:
         # popula o cache de entidades (necessário para o send_file achar o grupo de destino)
         await client.get_dialogs()
         enviados = 0
-        for chat_id in CHAT_IDS:
-            enviados = await processar_chat(client, chat_id, estado, args.limite, enviados)
+        for chat_id, topico_id in CHAT_IDS:
+            enviados = await processar_chat(
+                client, chat_id, topico_id, estado, args.limite, enviados
+            )
             if args.limite is not None and enviados >= args.limite:
                 break
 
