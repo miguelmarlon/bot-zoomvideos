@@ -1,9 +1,10 @@
 name: Monitor de vídeos Shopee
 
 on:
-  schedule:
-    - cron: "0 12 * * *" # 09:00 (America/Sao_Paulo)
-    - cron: "0 22 * * *" # 19:00 (America/Sao_Paulo)
+  # Agendamento desativado: o bot agora roda no servidor local.
+  # schedule:
+  #   - cron: "0 12 * * *" # 09:00 (America/Sao_Paulo)
+  #   - cron: "0 22 * * *" # 19:00 (America/Sao_Paulo)
   workflow_dispatch:
 
 permissions:

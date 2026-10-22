@@ -26,6 +26,10 @@ PADROES_IDS_PRODUTO = [
 ]
 
 
+class LinkInvalidoError(RuntimeError):
+    """Link que nunca vai virar afiliado (expirado, não é produto). Erro permanente."""
+
+
 def _extrair_ids_produto(url: str) -> tuple[str, str] | None:
     for padrao in PADROES_IDS_PRODUTO:
         match = padrao.search(url)
@@ -85,7 +89,7 @@ def converter_link(url_curta: str, sub_ids: list[str] | None = None) -> str:
     """
     url_expandida = expandir_link(url_curta)
     if _extrair_ids_produto(url_expandida) is None:
-        raise RuntimeError(f"link nao aponta para um produto valido: {url_expandida}")
+        raise LinkInvalidoError(f"link nao aponta para um produto valido: {url_expandida}")
     return gerar_link_afiliado(url_expandida, sub_ids)
 
 

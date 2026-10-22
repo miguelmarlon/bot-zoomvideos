@@ -7,3 +7,7 @@ monitor_session.session
 monitor_session.session-journal
 
 data/*.mp4
+
+state.json
+divulgacao_ids.json
+monitor.log
